@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using MassTransit;
 
 namespace Wiadomosci
 {
@@ -11,12 +12,13 @@ namespace Wiadomosci
         int ilosc { get; set; }
     }
 
-    public interface IStartZamówienia : IQuantity { }
+    public interface IStartZamówienia : IQuantity, CorrelatedBy<Guid> { }
     public interface IPytanieOPotwierdzenie : IQuantity { }
-    public interface IPotwierdzenie { }
-    public interface IBrakPotwierdzenia { }
+    public interface IPotwierdzenie : CorrelatedBy<Guid> { }
+    public interface IBrakPotwierdzenia : CorrelatedBy<Guid> { }
     public interface IPytanieoWolne : IQuantity { }
-    public interface OdpowiedzWolneNegatywna { }
+    public interface OdpowiedzWolne : CorrelatedBy<Guid> { }
+    public interface OdpowiedzWolneNegatywna : CorrelatedBy<Guid> { }
     public interface AkceptacjaZamówienia : IQuantity { }
     public interface OdrzucenieZamówienia : IQuantity { }
 }
