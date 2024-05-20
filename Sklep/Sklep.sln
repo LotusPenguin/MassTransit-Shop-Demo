@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34728.123
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sklep", "Sklep.csproj", "{F7BCE0E8-2AD0-4337-918B-521D64AB35DC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Wiadomosci", "..\Wiadomosci\Wiadomosci.csproj", "{4FFC2505-115F-468F-8764-19FB58EB0EB5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F7BCE0E8-2AD0-4337-918B-521D64AB35DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F7BCE0E8-2AD0-4337-918B-521D64AB35DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F7BCE0E8-2AD0-4337-918B-521D64AB35DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F7BCE0E8-2AD0-4337-918B-521D64AB35DC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4FFC2505-115F-468F-8764-19FB58EB0EB5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FFC2505-115F-468F-8764-19FB58EB0EB5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FFC2505-115F-468F-8764-19FB58EB0EB5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FFC2505-115F-468F-8764-19FB58EB0EB5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FFDAEFD5-934F-44A9-A920-D0BF3DEC3569}
+	EndGlobalSection
+EndGlobal
