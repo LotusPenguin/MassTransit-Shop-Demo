@@ -49,5 +49,11 @@
   <ItemGroup>
     <None Include="App.config" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Wiadomosci\Wiadomosci.csproj">
+      <Project>{4ffc2505-115f-468f-8764-19fb58eb0eb5}</Project>
+      <Name>Wiadomosci</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -12,8 +12,13 @@ namespace Wiadomosci
         int ilosc { get; set; }
     }
 
-    public interface IStartZamówienia : IQuantity, CorrelatedBy<Guid> { }
-    public interface IPytanieOPotwierdzenie : IQuantity { }
+    public interface IClientID
+    {
+        string clientID { get; set; }
+    }
+
+    public interface IStartZamówienia : IQuantity, IClientID, CorrelatedBy<Guid> { }
+    public interface IPytanieOPotwierdzenie : IQuantity, CorrelatedBy<Guid> { }
     public interface IPotwierdzenie : CorrelatedBy<Guid> { }
     public interface IBrakPotwierdzenia : CorrelatedBy<Guid> { }
     public interface IPytanieoWolne : IQuantity { }
