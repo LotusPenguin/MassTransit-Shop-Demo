@@ -2,3 +2,6 @@
 */obj
 */packages
 */bin
+*.txt
+*.docx
+*.pdf

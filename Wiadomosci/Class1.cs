@@ -9,21 +9,22 @@ namespace Wiadomosci
 {
     public interface IQuantity
     {
-        int ilosc { get; set; }
+        int Ilosc { get; set; }
     }
 
     public interface IClientID
     {
-        string clientID { get; set; }
+        string ClientID { get; set; }
     }
 
     public interface IStartZamówienia : IQuantity, IClientID, CorrelatedBy<Guid> { }
     public interface IPytanieOPotwierdzenie : IQuantity, CorrelatedBy<Guid> { }
     public interface IPotwierdzenie : CorrelatedBy<Guid> { }
     public interface IBrakPotwierdzenia : CorrelatedBy<Guid> { }
-    public interface IPytanieoWolne : IQuantity { }
-    public interface OdpowiedzWolne : CorrelatedBy<Guid> { }
-    public interface OdpowiedzWolneNegatywna : CorrelatedBy<Guid> { }
-    public interface AkceptacjaZamówienia : IQuantity { }
-    public interface OdrzucenieZamówienia : IQuantity { }
+    public interface IPytanieoWolne : IQuantity, CorrelatedBy<Guid> { }
+    public interface IOdpowiedzWolne : CorrelatedBy<Guid> { }
+    public interface IOdpowiedzWolneNegatywna : CorrelatedBy<Guid> { }
+    public interface IAkceptacjaZamówienia : IQuantity, CorrelatedBy<Guid> { }
+    public interface IOdrzucenieZamówienia : IQuantity, CorrelatedBy<Guid> { }
+    public interface ITimeout : CorrelatedBy<Guid> { }
 }
