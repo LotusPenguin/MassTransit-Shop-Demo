@@ -4,84 +4,97 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Wiadomosci;
-using MassTransit
+using MassTransit;
+using System.Threading;
 
-namespace KlientB
+namespace KlientA
 {
+    public class StartZamówienia : IStartZamówienia
+    {
+        public int Ilosc { get; set; }
+        public string ClientID { get; set; }
+        public Guid CorrelationId { get; set; }
+    }
+
+    public class Potwierdzenie : IPotwierdzenie
+    {
+        public Guid CorrelationId { get; set; }
+    }
+
+    public class BrakPotwierdzenia : IBrakPotwierdzenia
+    {
+        public Guid CorrelationId { get; set; }
+    }
+
+    //Utils class
     class Utils
     {
         public static string formatTimestamp(string input)
         {
             return "[" + input + "] ";
         }
+        public static string printTimestamp()
+        {
+            return formatTimestamp(DateTime.Now.ToString());
+        }
     }
 
-    class HandlerClass : IConsumer<Wiadomosci.IOdpA>, IConsumer<Wiadomosci.IOdpB>
+    class HandlerClass : IConsumer<IPytanieOPotwierdzenie>, IConsumer<IAkceptacjaZamówienia>, IConsumer<IOdrzucenieZamówienia>
     {
-        static Random rnd = new Random();
-        ISendEndpoint sendEpA;
-        ISendEndpoint sendEpB;
+        public bool IsOrderOngoing { get; set; }
 
         public HandlerClass()
         {
-            var busA = Bus.Factory.CreateUsingRabbitMq(sbc =>
-            {
-                sbc.Host(new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd"), h =>
-                {
-                    h.Username("xgjwajpd");
-                    h.Password("gMGsMovgDYfZHxL1F7ca2sjkY_zhWKiN");
-                });
-            });
-            var tsk = busA.GetSendEndpoint(new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/recvqueueA"));
-            tsk.Wait();
-            var sendEpA = tsk.Result;
-            this.sendEpA = sendEpA;
-
-            var busB = Bus.Factory.CreateUsingRabbitMq(sbc =>
-            {
-                sbc.Host(new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd"), h =>
-                {
-                    h.Username("xgjwajpd");
-                    h.Password("gMGsMovgDYfZHxL1F7ca2sjkY_zhWKiN");
-                });
-            });
-            tsk = busB.GetSendEndpoint(new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/recvqueueB"));
-            tsk.Wait();
-            var sendEpB = tsk.Result;
-            this.sendEpB = sendEpB;
+            IsOrderOngoing = false;
         }
 
-        public Task Consume(ConsumeContext<IOdpA> ctx)
+        public Task Consume(ConsumeContext<IPytanieOPotwierdzenie> context)
         {
-            int randInt = rnd.Next(1, 4);
-            if (randInt == 3)
+            Console.Out.WriteLineAsync(Utils.printTimestamp() + $"Do you want to confirm the order of {context.Message.Ilosc} items (y/n)? ");
+            ConsoleKey input = Console.ReadKey().Key;
+            if (input == ConsoleKey.Y)
             {
-                try
+                Console.Out.WriteLineAsync($"\n{Utils.printTimestamp()}Confirmation request sent to shop");
+                return Task.Run(() => context.RespondAsync(new Potwierdzenie() { CorrelationId = context.Message.CorrelationId }, ctx =>
                 {
-                    throw new Exception("Message processing exception");
-                }
-                catch (Exception e)
+                    ctx.ResponseAddress = new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/recvqueueB");
+                }));
+            }
+            else if (input == ConsoleKey.N)
+            {
+                Console.Out.WriteLineAsync($"\n{Utils.printTimestamp()}Cancellation request sent to shop");
+                return Task.Run(() => context.RespondAsync(new BrakPotwierdzenia() { CorrelationId = context.Message.CorrelationId }, ctx =>
                 {
-                    Console.Out.WriteLineAsync(
-                    Utils.formatTimestamp(ctx.Headers.Get<string>("timestamp")) +
-                    "Throwing Exception to OdpA" + $" (#{ctx.Headers.Get<string>("message_no")})");
-
-                    //Message, gdy wywołany wyjątek od abonenta A
-                    sendEpA.Send(new Publ("Message from A processing exception, retrying..."), responsectx =>
-                    {
-                        responsectx.Headers.Set("timestamp", DateTime.Now.ToString());
-                    });
-
-                    return Task.FromException(e);
-                }
+                    ctx.ResponseAddress = new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/recvqueueB");
+                }));
+            }
+            else if (input == ConsoleKey.Escape)
+            {
+                return Task.CompletedTask;
             }
             else
             {
-                return Console.Out.WriteLineAsync(
-                    Utils.formatTimestamp(ctx.Headers.Get<string>("timestamp")) +
-                    "#" + ctx.Headers.Get<string>("message_no") + " " +
-                    ctx.Message.kto);
+                if (IsOrderOngoing)
+                {
+                    return Task.Run(() => Consume(context));
+                }
+                else
+                {
+                    return Task.CompletedTask;
+                }
             }
+        }
+
+        public Task Consume(ConsumeContext<IAkceptacjaZamówienia> context)
+        {
+            IsOrderOngoing = false;
+            return Console.Out.WriteLineAsync($"{Utils.printTimestamp()}Order no. {context.Message.CorrelationId} has been confirmed by the shop.");
+        }
+
+        public Task Consume(ConsumeContext<IOdrzucenieZamówienia> context)
+        {
+            IsOrderOngoing = false;
+            return Console.Out.WriteLineAsync($"{Utils.printTimestamp()}[CANCELLED] Order no. {context.Message.CorrelationId} has been cancelled by the shop (reason: {context.Message.Reason}).");
         }
     }
 
@@ -90,15 +103,80 @@ namespace KlientB
         static void DisplayStatus()
         {
             Console.Clear();
-            Console.WriteLine("Publisher initialized. Press ESC to quit");
+            Console.WriteLine("Client B initialized. Press ESC to quit");
+            Console.WriteLine("Press ENTER to order items");
         }
 
         static void Main(string[] args)
         {
             bool exitFlag = false;
-            int counter = 0;
+            var instance = new HandlerClass();
 
+            var bus = Bus.Factory.CreateUsingRabbitMq(sbc => {
+                sbc.Host(new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd"), h => {
+                    h.Username("xgjwajpd");
+                    h.Password("gMGsMovgDYfZHxL1F7ca2sjkY_zhWKiN");
+                });
+                sbc.ReceiveEndpoint("recvqueueB", ep => {
+                    ep.Instance(instance);
+                });
+            });
+            var task = bus.GetSendEndpoint(new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/storequeue"));
+            task.Wait();
+            var sendEp = task.Result;
 
+            bus.Start();
+
+            DisplayStatus();
+
+            //Main loop
+            while (!exitFlag)
+            {
+                ConsoleKey consoleKey = Console.ReadKey().Key;
+
+                //Dummy input loop for future use
+                while (consoleKey != ConsoleKey.Escape)
+                {
+                    switch (consoleKey)
+                    {
+                        case ConsoleKey.Enter:
+                            int quantity;
+                            Console.Out.WriteLineAsync($"{Utils.printTimestamp()}Enter order quantity: ");
+                            try
+                            {
+                                quantity = int.Parse(Console.ReadLine());
+                                sendEp.Send(new StartZamówienia() { ClientID = "klient_B", Ilosc = quantity }, ctx =>
+                                {
+                                    ctx.ResponseAddress = new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/recvqueueB");
+                                });
+                                instance.IsOrderOngoing = true;
+                                Console.Out.WriteLineAsync($"{Utils.printTimestamp()}Input locked, awaiting order processing");
+
+                                while (instance.IsOrderOngoing)
+                                {
+                                    //busy waiting
+                                    Thread.Sleep(100);
+                                }
+
+                                //clear input buffer
+                                while (Console.KeyAvailable)
+                                    Console.ReadKey(true);
+                            }
+                            catch (FormatException)
+                            {
+                                Console.Out.WriteLineAsync($"{Utils.printTimestamp()}Incorrect input. Order cancelled.");
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                    consoleKey = Console.ReadKey().Key;
+                }
+                exitFlag = true;
+                continue;
+            }
+
+            bus.Stop();
         }
     }
 }

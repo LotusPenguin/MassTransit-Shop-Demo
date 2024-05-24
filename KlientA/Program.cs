@@ -5,6 +5,10 @@ using System.Text;
 using System.Threading.Tasks;
 using Wiadomosci;
 using MassTransit;
+using MassTransit.Saga;
+using System.Threading;
+using MassTransit.Transports;
+using static MassTransit.Logging.DiagnosticHeaders.Messaging;
 
 namespace KlientA
 {
@@ -40,19 +44,60 @@ namespace KlientA
 
     class HandlerClass : IConsumer<IPytanieOPotwierdzenie>, IConsumer<IAkceptacjaZamówienia>, IConsumer<IOdrzucenieZamówienia>
     {
+        public bool IsOrderOngoing { get; set; }
+
+        public HandlerClass()
+        {
+            IsOrderOngoing = false;
+        }
+
         public Task Consume(ConsumeContext<IPytanieOPotwierdzenie> context)
         {
-            throw new NotImplementedException();
+            Console.Out.WriteLineAsync(Utils.printTimestamp() + $"Do you want to confirm the order of {context.Message.Ilosc} items (y/n)? ");
+            ConsoleKey input = Console.ReadKey().Key;
+            if (input == ConsoleKey.Y)
+            {
+                Console.Out.WriteLineAsync($"\n{Utils.printTimestamp()}Confirmation request sent to shop");
+                return Task.Run(() => context.RespondAsync(new Potwierdzenie() { CorrelationId = context.Message.CorrelationId }, ctx =>
+                {
+                    ctx.ResponseAddress = new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/recvqueueA");
+                }));
+            }
+            else if (input == ConsoleKey.N)
+            {
+                Console.Out.WriteLineAsync($"\n{Utils.printTimestamp()}Cancellation request sent to shop");
+                return Task.Run(() => context.RespondAsync(new BrakPotwierdzenia() { CorrelationId = context.Message.CorrelationId}, ctx =>
+                {
+                    ctx.ResponseAddress = new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/recvqueueA");
+                }));
+            }
+            else if (input == ConsoleKey.Escape)
+            {
+                return Task.CompletedTask;
+            }
+            else
+            {
+                if (IsOrderOngoing)
+                {
+                    return Task.Run(() => Consume(context));
+                }
+                else
+                {
+                    return Task.CompletedTask;
+                }
+            }
         }
 
         public Task Consume(ConsumeContext<IAkceptacjaZamówienia> context)
         {
-            throw new NotImplementedException();
+            IsOrderOngoing = false;
+            return Console.Out.WriteLineAsync($"{Utils.printTimestamp()}Order no. {context.Message.CorrelationId} has been confirmed by the shop.");
         }
 
         public Task Consume(ConsumeContext<IOdrzucenieZamówienia> context)
         {
-            throw new NotImplementedException();
+            IsOrderOngoing = false;
+            return Console.Out.WriteLineAsync($"{Utils.printTimestamp()}[CANCELLED] Order no. {context.Message.CorrelationId} has been cancelled by the shop (reason: {context.Message.Reason}).");
         }
     }
 
@@ -62,6 +107,7 @@ namespace KlientA
         {
             Console.Clear();
             Console.WriteLine("Client A initialized. Press ESC to quit");
+            Console.WriteLine("Press ENTER to order items");
         }
 
         static void Main(string[] args)
@@ -78,11 +124,16 @@ namespace KlientA
                     ep.Instance(instance);
                 });
             });
+            var task = bus.GetSendEndpoint(new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/storequeue"));
+            task.Wait();
+            var sendEp = task.Result; 
 
             bus.Start();
 
-            //Keyboard input resoultion task
-            Task.Factory.StartNew(() =>
+            DisplayStatus();
+
+            //Main loop
+            while (!exitFlag)
             {
                 ConsoleKey consoleKey = Console.ReadKey().Key;
 
@@ -91,19 +142,40 @@ namespace KlientA
                 {
                     switch (consoleKey)
                     {
+                        case ConsoleKey.Enter:
+                            int quantity;
+                            Console.Out.WriteLineAsync($"{Utils.printTimestamp()}Enter order quantity: ");
+                            try
+                            {
+                                quantity = int.Parse(Console.ReadLine());
+                                sendEp.Send(new StartZamówienia() { ClientID = "klient_A", Ilosc = quantity }, ctx =>
+                                {
+                                    ctx.ResponseAddress = new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/recvqueueA");
+                                });
+                                instance.IsOrderOngoing = true;
+                                Console.Out.WriteLineAsync($"{Utils.printTimestamp()}Input locked, awaiting order processing");
+                                
+                                while(instance.IsOrderOngoing)
+                                {
+                                    //busy waiting
+                                    Thread.Sleep(100);
+                                }
+
+                                //clear input buffer
+                                while (Console.KeyAvailable)
+                                    Console.ReadKey(true);
+                            }
+                            catch (FormatException)
+                            {
+                                Console.Out.WriteLineAsync($"{Utils.printTimestamp()}Incorrect input. Order cancelled.");
+                            }
+                            break;
                         default:
                             break;
                     }
                     consoleKey = Console.ReadKey().Key;
                 }
                 exitFlag = true;
-            });
-
-            DisplayStatus();
-
-            //Main loop
-            while (!exitFlag)
-            {
                 continue;
             }
 

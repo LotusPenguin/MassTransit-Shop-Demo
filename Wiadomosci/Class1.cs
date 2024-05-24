@@ -25,6 +25,12 @@ namespace Wiadomosci
     public interface IOdpowiedzWolne : CorrelatedBy<Guid> { }
     public interface IOdpowiedzWolneNegatywna : CorrelatedBy<Guid> { }
     public interface IAkceptacjaZamówienia : IQuantity, CorrelatedBy<Guid> { }
-    public interface IOdrzucenieZamówienia : IQuantity, CorrelatedBy<Guid> { }
-    public interface ITimeout : CorrelatedBy<Guid> { }
+    public interface IOdrzucenieZamówienia : IQuantity, CorrelatedBy<Guid> 
+    {
+        string Reason { get; set; }
+    }
+    public interface ITimeout : CorrelatedBy<Guid> 
+    {
+        Uri ResponseAddress { get; set; }
+    }
 }

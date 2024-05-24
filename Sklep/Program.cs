@@ -10,6 +10,7 @@ using System.Threading;
 using MassTransit.Internals;
 using System.Runtime.InteropServices.WindowsRuntime;
 using MassTransit.SagaStateMachine;
+using System.Runtime.InteropServices.ComTypes;
 
 namespace Sklep
 {
@@ -17,6 +18,7 @@ namespace Sklep
     public class Timeout : ITimeout
     {
         public Guid CorrelationId { get; set; }
+        public Uri ResponseAddress { get; set; }
     }
 
     public class PytanieOPotwierdzenie : IPytanieOPotwierdzenie 
@@ -35,6 +37,7 @@ namespace Sklep
     {
         public int Ilosc { get ; set ; }
         public Guid CorrelationId { get; set; }
+        public string Reason { get; set; }
     }
 
     public class AkceptacjaZamówienia : IAkceptacjaZamówienia
@@ -52,6 +55,8 @@ namespace Sklep
         public string ClientID { get; set; }
         public int Quantity { get; set; }
         public Guid? TimeoutId { get; set; }
+        public Uri ResponseAddress { get; set; }
+        public Uri WarehouseAddress { get; set; }
     }
 
     public class OrderProcessSaga : MassTransit.MassTransitStateMachine<OrderProcessData>
@@ -71,12 +76,12 @@ namespace Sklep
         public Event<Wiadomosci.ITimeout> TimeoutEvent { get; private set; }
         public Schedule<OrderProcessData, Wiadomosci.ITimeout> TO {  get; private set; }
 
-        public OrderProcessSaga ()
+        public OrderProcessSaga()
         {
             InstanceState(x => x.CurrentState);
-            Event(() => StartEvent, 
+            Event(() => StartEvent,
                 x => x.CorrelateBy(
-                    s => s.ClientID, 
+                    s => s.ClientID,
                     ctx => ctx.Message.ClientID)
                 .SelectId(ctx => Guid.NewGuid()));
 
@@ -86,11 +91,15 @@ namespace Sklep
 
             Initially(
                 When(StartEvent)
-                    .Schedule(TO, ctx => new Timeout() { CorrelationId = ctx.Saga.CorrelationId })
                     .Then(ctx =>
                     {
                         ctx.Saga.ClientID = ctx.Message.ClientID;
                         ctx.Saga.Quantity = ctx.Message.Ilosc;
+                        ctx.Saga.ResponseAddress = ctx.ResponseAddress;
+                        ctx.Saga.WarehouseAddress = new Uri("rabbitmq://cow.rmq2.cloudamqp.com/xgjwajpd/warehousequeue");
+                    })
+                    .Schedule(TO, ctx => new Timeout() { CorrelationId = ctx.Saga.CorrelationId, ResponseAddress = ctx.Saga.ResponseAddress }, ctx => {
+                        ctx.ResponseAddress = ctx.Message.ResponseAddress;
                     })
                     .ThenAsync(ctx =>
                     {
@@ -98,10 +107,9 @@ namespace Sklep
                     })
                     .Respond(ctx =>
                     {
-                        return new PytanieOPotwierdzenie() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity};
+                        return new PytanieOPotwierdzenie() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
                     })
-                    .Respond(ctx =>
-                    {
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx => {
                         return new PytanieOWolne() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
                     })
                     .TransitionTo(Unconfirmed)
@@ -115,7 +123,11 @@ namespace Sklep
                     })
                     .Respond(ctx =>
                     {
-                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Timeout"};
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
+                    {
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Timeout" };
                     })
                     .Finalize(),
 
@@ -134,7 +146,11 @@ namespace Sklep
                     })
                     .Respond(ctx =>
                     {
-                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Client cancelled" };
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
+                    {
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Client cancelled" };
                     })
                     .Finalize(),
 
@@ -151,9 +167,13 @@ namespace Sklep
                     {
                         return Console.Out.WriteLineAsync(Utils.printTimestamp() + $"[ABORT]Magazyn odrzuca {ctx.Saga.CorrelationId}");
                     })
-                    .Respond(ctx =>
+                    .Send(ctx => { return ctx.Saga.ResponseAddress; }, ctx =>
                     {
-                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Out of stock" };
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
+                    {
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Out of stock" };
                     })
                     .Finalize()
                     );
@@ -166,7 +186,11 @@ namespace Sklep
                     })
                     .Respond(ctx =>
                     {
-                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Timeout" };
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
+                    {
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Timeout" };
                     })
                     .Finalize(),
 
@@ -174,10 +198,14 @@ namespace Sklep
                     .Unschedule(TO)
                     .ThenAsync(ctx =>
                     {
-                        return Console.Out.WriteLineAsync(Utils.printTimestamp() + $"Magazyn potwierdza {ctx.Saga.CorrelationId}");
+                        return Console.Out.WriteLineAsync(Utils.printTimestamp() + $"[SUCCESS]Magazyn potwierdza {ctx.Saga.CorrelationId}");
                     })
                     .Respond(ctx => 
                     { 
+                        return new AkceptacjaZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
+                    {
                         return new AkceptacjaZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
                     })
                     .Finalize(),
@@ -188,9 +216,13 @@ namespace Sklep
                     {
                         return Console.Out.WriteLineAsync(Utils.printTimestamp() + $"[ABORT]Magazyn odrzuca {ctx.Saga.CorrelationId}");
                     })
-                    .Respond(ctx =>
+                    .Send(ctx => { return ctx.Saga.ResponseAddress; }, ctx =>
                     {
-                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Out of stock" };
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
+                    {
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Out of stock" };
                     })
                     .Finalize()
                 );
@@ -203,7 +235,11 @@ namespace Sklep
                     })
                     .Respond(ctx =>
                     {
-                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Timeout" };
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
+                    {
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Timeout" };
                     })
                     .Finalize(),
 
@@ -211,9 +247,13 @@ namespace Sklep
                     .Unschedule(TO)
                     .ThenAsync(ctx =>
                     {
-                        return Console.Out.WriteLineAsync(Utils.printTimestamp() + $"Potwierdzenie {ctx.Saga.CorrelationId} przez klienta {ctx.Saga.ClientID}");
+                        return Console.Out.WriteLineAsync(Utils.printTimestamp() + $"[SUCCESS]Potwierdzenie {ctx.Saga.CorrelationId} przez klienta {ctx.Saga.ClientID}");
                     })
                     .Respond(ctx =>
+                    {
+                        return new AkceptacjaZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
                     {
                         return new AkceptacjaZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
                     })
@@ -227,7 +267,11 @@ namespace Sklep
                     })
                     .Respond(ctx =>
                     {
-                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity };
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Client cancelled" };
+                    })
+                    .Send(ctx => { return ctx.Saga.WarehouseAddress; }, ctx =>
+                    {
+                        return new OdrzucenieZamówienia() { CorrelationId = ctx.Saga.CorrelationId, Ilosc = ctx.Saga.Quantity, Reason = "Client cancelled" };
                     })
                     .Finalize()
                 );
